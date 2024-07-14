@@ -21,9 +21,11 @@ try:
     print("Listening on IP: ", server_ip, " Port: ", str(server_port))
 
     while True:
-        data, address = serverSocket.recvfrom(buffer_size)
-        print("received message: ", data, "from: ", address)
-
+        data, client_address = serverSocket.recvfrom(buffer_size)
+        print("Echo data: ", data, "from: ", client_address)
+        
+        sent = serverSocket.sendto(data, client_address)
+        print("Sent: ", data, "to: ", client_address)    
 except Exception as e:
     print("Error: ", e)
 
