@@ -20,6 +20,7 @@ try:
     print("---------------- Server started! ---------")  
     print("Listening on IP: ", server_ip, " Port: ", str(server_port))
 
+    #Recebe um ping do cliente e devolve o Echo
     while True:
         data, client_address = serverSocket.recvfrom(buffer_size)
         print("Echo data: ", data, "from: ", client_address)
