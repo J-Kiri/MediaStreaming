@@ -23,12 +23,36 @@ control_queue = queue.Queue()
 # Configuração básica de logging para registrar informações, erros e mensagens importantes do servidor.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def calculate_ping(addr):
+    start_time = time.time()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1)
+        try:
+            sock.connect(addr)
+            sock.send(b'ping')
+            sock.recv(1024)
+        except Exception:
+            pass
+    return (time.time() - start_time) * 1000  # Retorna o tempo em ms
+
+# Função para definir a quantidade dinâmica de pacotes
+def get_dynamic_packet_count(ping_time):
+    if ping_time < 50:
+        return 20  # Conexão rápida
+    elif ping_time < 100:
+        return 15  # Conexão média
+    else:
+        return 10  # Conexão lenta
+
 # Função responsável por enviar o vídeo via UDP. Recebe o socket UDP, a conexão TCP, e o endereço do cliente.
 def handle_udp_streaming(udp_sock, tcp_conn, addr):
     logging.info("UDP Server Ready to send data...")
 
     id = 0  # Contador de pacotes enviados.
     total = 0  # Total de dados enviados em MB.
+
+    ping_time = calculate_ping(addr)
+    packet_count = get_dynamic_packet_count(ping_time)
 
     # Abrindo o arquivo de vídeo em modo binário para leitura.
     with open('foguete.mp4', 'rb') as video_file:
@@ -67,7 +91,7 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                     logging.error(f"Error in transmitting the video: {e}")
 
                 # A cada 10 pacotes, o servidor espera uma resposta do cliente via TCP.
-                if id == 10:
+                if id == packet_count:
                     control_data = tcp_conn.recv(BUFFER_SIZE).decode()
                     # print(f"Received from client: {control_data}")
                     if control_data != "NEXT":

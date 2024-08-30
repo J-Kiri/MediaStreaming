@@ -1,4 +1,5 @@
 import socket
+import time
 import threading
 from sys import stdout
 import sys
@@ -14,7 +15,7 @@ curses.cbreak()
 # TCP_PORT é a porta utilizada para comunicação de controle via TCP.
 # BUFFER_SIZE define o tamanho do buffer para a leitura dos pacotes de dados.
 
-SERVER_IP = "localhost"
+SERVER_IP = "192.168.0.107"
 UDP_PORT = 5005
 TCP_PORT = 5006
 NEW_TCP_PORT = 5007
@@ -22,6 +23,27 @@ BUFFER_SIZE = 1400
 
 # Configuração básica de logging para registrar informações, erros e mensagens importantes no cliente.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Função para calcular o ping
+def calculate_ping(addr):
+    start_time = time.time()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1)
+        try:
+            sock.connect(addr)
+            sock.send(b'ping')
+            sock.recv(1024)
+        except Exception:
+            pass
+    return (time.time() - start_time) * 1000  # Retorna o tempo em ms
+
+def get_dynamic_packet_count(ping_time):
+    if ping_time < 50:
+        return 20  # Conexão rápida
+    elif ping_time < 100:
+        return 15  # Conexão média
+    else:
+        return 10  # Conexão lenta
 
 # Função responsável por receber o stream de vídeo via UDP.
 def receive_udp_stream():
@@ -34,6 +56,9 @@ def receive_udp_stream():
         id = 0  # Contador de pacotes recebidos.
         video_data = bytearray()  # Armazena temporariamente os dados do vídeo recebidos.
 
+        ping_time = calculate_ping((SERVER_IP, TCP_PORT))
+        packet_count = get_dynamic_packet_count(ping_time)
+
         while True:
             data, _ = udp_sock.recvfrom(BUFFER_SIZE)  # Recebe um pacote UDP do servidor.
             if not data:
@@ -43,11 +68,11 @@ def receive_udp_stream():
             id += 1        
 
             # A cada 10 pacotes recebidos, os dados são processados e enviados para a saída padrão (stdout).
-            if id == 10:
+            # Quantidade de pacotes precisa ser dinamica
+            if id == packet_count :
                 for i in range(0, len(video_data), BUFFER_SIZE):
                     stdout.buffer.write(video_data[i:i+BUFFER_SIZE])
                     sys.stdout.buffer.flush()
-                    logging.info(f"Received: {video_data[i:i+BUFFER_SIZE]}")
                 id = 0  # Reseta o contador de pacotes.
                 video_data = bytearray()  # Limpa o buffer de vídeo após o envio dos dados.
                 tcp_sock.send(b'NEXT')  # Envia uma mensagem TCP para o servidor, indicando que o cliente está pronto para o próximo lote de pacotes.
