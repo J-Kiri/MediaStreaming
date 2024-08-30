@@ -4,6 +4,11 @@ from sys import stdout
 import sys
 import logging
 
+import curses
+stdscr = curses.initscr()
+curses.noecho()
+curses.cbreak()
+
 # SERVER_IP define o endereço IP do servidor ao qual o cliente se conectará.
 # UDP_PORT é a porta utilizada para receber os dados via UDP.
 # TCP_PORT é a porta utilizada para comunicação de controle via TCP.
@@ -65,9 +70,9 @@ def seek_control():
     print("Conexão de controle TCP estabelecida.")
 
     while True:#p: pausar, c: continuar, s: sair
-        command = input()
-        tcp_sock.send(command.encode())
-        if command == "STOP":
+        command = stdscr.getch()
+        tcp_sock.send(chr(command).encode(encoding="utf-8"))
+        if command == ord('s'):
             break
 
     tcp_sock.close()
@@ -89,3 +94,7 @@ if __name__ == "__main__":
         logging.error(f"Error creating UDP thread: {e}")
         
     tcp_sock.close()  # Fecha a conexão TCP ao final da transmissão.
+    curses.nocbreak()
+    stdscr.keypad(False)
+    curses.echo()
+    curses.endwin()

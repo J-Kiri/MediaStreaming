@@ -16,6 +16,8 @@ TCP_PORT = 5006
 NEW_TCP_PORT = 5007
 BUFFER_SIZE = 1400
 
+ROLLBACK_SECONDS = 10
+
 control_queue = queue.Queue()
 
 # Configuração básica de logging para registrar informações, erros e mensagens importantes do servidor.
@@ -23,7 +25,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Função responsável por enviar o vídeo via UDP. Recebe o socket UDP, a conexão TCP, e o endereço do cliente.
 def handle_udp_streaming(udp_sock, tcp_conn, addr):
-    print("UDP Server Ready to send data...")
+    logging.info("UDP Server Ready to send data...")
 
     id = 0  # Contador de pacotes enviados.
     total = 0  # Total de dados enviados em MB.
@@ -31,27 +33,27 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
     # Abrindo o arquivo de vídeo em modo binário para leitura.
     with open('foguete.mp4', 'rb') as video_file:
         while True:
-            try:
-                
+            try: 
                 if not control_queue.empty():
                     command = control_queue.get()
-                    if command == "p":
-                        print("Streaming pausado.")
-                        while control_queue.get() != "c":
+
+                    if(command == ord('p')):
+                        logging.info("Streaming pausado.")
+                        while control_queue.get() != ord('c'):
                             pass
-                        print("Streaming retomado.")
-                    elif command == "s":
-                        print("Streaming interrompido.")
+                        logging.info("Streaming retomado.")
+                    elif(command == ord('s')):
+                        logging.info("Streaming interrompido.")
                         break
-                    elif command == "r":
-                        total -=100*BUFFER_SIZE
-                        video_file.seek(total)
-                
+                    elif(command == ord('r')):
+                        position_return = video_file.tell() - (ROLLBACK_SECONDS * BUFFER_SIZE)
+                        video_file.seek(position_return)
+                        
                 # Leitura de um pedaço do arquivo de vídeo com tamanho definido pelo BUFFER_SIZE.
                 data = video_file.read(BUFFER_SIZE)
                 if not data:
                     # Se não houver mais dados para ler, significa que o vídeo terminou.
-                    print("End of video file")
+                    logging.info("End of video file")
                     udp_sock.sendto(b'', addr)  # Envia um pacote vazio para indicar o fim do vídeo.
                     return
                
@@ -59,7 +61,7 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                     id += 1
                     total += len(data)  # Calcula o total de dados enviados em KB.
                     udp_sock.sendto(data, addr)  # Envia o pacote UDP com os dados do vídeo.
-                    print(f"Sent {id} packets with {len(data)} bytes to {addr}, total sent: {total}B")
+                    logging.info(f"Sent {id} packets with {len(data)} bytes to {addr}, total sent: {total}B")
                     time.sleep(0.0005)  # Pequena pausa para evitar congestionamento.
                 except Exception as e:
                     logging.error(f"Error in transmitting the video: {e}")
@@ -67,7 +69,7 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                 # A cada 10 pacotes, o servidor espera uma resposta do cliente via TCP.
                 if id == 10:
                     control_data = tcp_conn.recv(BUFFER_SIZE).decode()
-                    print(f"Received from client: {control_data}")
+                    # print(f"Received from client: {control_data}")
                     if control_data != "NEXT":
                         break  # Se a resposta não for "NEXT", interrompe o envio.
                     id = 0  # Reseta o contador de pacotes.
@@ -96,11 +98,11 @@ def seek_control():
     print(f"Conexão de controle estabelecida com {addr}")
 
     while True:
-        data = conn.recv(BUFFER_SIZE).decode()
-        if not data:
+        command = conn.recv(BUFFER_SIZE).decode()
+        if not command:
             break
-        print(f"Comando recebido: {data}")
-        control_queue.put(data)
+        print(f"Comando recebido: {command}")
+        control_queue.put(ord(command))
 
     conn.close()
     tcp_sock.close()
@@ -123,7 +125,6 @@ if __name__ == "__main__":
         print("TCP PORT =", TCP_PORT)
 
     seek_thread = threading.Thread(target=seek_control)
-
     seek_thread.start()
 
     try:
