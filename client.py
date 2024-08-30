@@ -47,6 +47,7 @@ def receive_udp_stream():
                 for i in range(0, len(video_data), BUFFER_SIZE):
                     stdout.buffer.write(video_data[i:i+BUFFER_SIZE])
                     sys.stdout.buffer.flush()
+                    logging.info(f"Received: {video_data[i:i+BUFFER_SIZE]}")
                 id = 0  # Reseta o contador de pacotes.
                 video_data = bytearray()  # Limpa o buffer de vídeo após o envio dos dados.
                 tcp_sock.send(b'NEXT')  # Envia uma mensagem TCP para o servidor, indicando que o cliente está pronto para o próximo lote de pacotes.
@@ -67,7 +68,7 @@ def send_tcp_control():
 def seek_control():
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.connect((SERVER_IP, NEW_TCP_PORT))
-    print("Conexão de controle TCP estabelecida.")
+    logging.info("Conexão de controle TCP estabelecida.")
 
     while True:#p: pausar, c: continuar, s: sair
         command = stdscr.getch()
