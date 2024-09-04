@@ -1,3 +1,4 @@
+#server
 import socket
 import time
 from contextlib import closing
@@ -5,13 +6,13 @@ import logging
 import queue
 import threading
 
-OWN_IP = "192.168.0.107"
+OWN_IP = "localhost"
 UDP_PORT = 5005
 TCP_PORT = 5006
 NEW_TCP_PORT = 5007
 BUFFER_SIZE = 1400
 
-ROLLBACK_SECONDS = 10
+ROLLBACK_SECONDS = 5
 
 control_queue = queue.Queue()
 
@@ -21,47 +22,54 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
     id = 0
     total = 0
 
-    with open('video.mp4', 'rb') as video_file:
-        while True:
+    with open('foguete.mp4', 'rb') as video_file:
+        
             try:
+                while True:
+                    if not control_queue.empty():
+                        command = control_queue.get()
+                        if command == "p":
+                            logging.info("Streaming pausado.")
+                            while control_queue.get() != "c":
+                                pass
+                            logging.info("Streaming retomado.")
+                        elif command == "s":
+                            logging.info("Streaming interrompido.")
+                            break
+                        elif command == "rw":
+                            logging.info("Rewinding video by 5 seconds")
+                            video_file.seek(video_file.tell() - ROLLBACK_SECONDS * BUFFER_SIZE)
+                        elif command == "fw":
+                            logging.info("Forwarding video by 5 seconds")
+                            video_file.seek(video_file.tell() + ROLLBACK_SECONDS * BUFFER_SIZE)
+                    
+                    
+                    data = video_file.read(BUFFER_SIZE)
+                    if not data:
+                        logging.info("End of video file")
+                        udp_sock.sendto(b'', addr)
+                        return
                 
-                """if not control_queue.empty():
-                    command = control_queue.get()
-                    if command == "p":
-                        logging.info("Streaming pausado.")
-                        while control_queue.get() != "c":
-                            pass
-                        logging.info("Streaming retomado.")
-                    elif command == "s":
-                        logging.info("Streaming interrompido.")
-                        break
-"""
-                
-                data = video_file.read(BUFFER_SIZE)
-                if not data:
-                    logging.info("End of video file")
-                    udp_sock.sendto(b'', addr)
-                    return
-               
-                try:
-                    id += 1
-                    total += len(data)
-                    udp_sock.sendto(data, addr)
-                    time.sleep(0.0005)
-                except Exception as e:
-                    logging.error(f"Error in transmitting the video: {e}")
-                var = 0.2
-                if id == 10*(1 - var):
-                    control_data = tcp_conn.recv(BUFFER_SIZE).decode()
-                    logging.info(f"Received from client: {control_data}")
-                    if control_data != "NEXT":
-                        break
-                    id = 0 
+                    try:
+                        id += 1
+                        total += len(data)
+                        udp_sock.sendto(data, addr)
+                        logging.info(f"Sent to client: {total} B")
+                        #time.sleep(0.0005)
+                    except Exception as e:
+                        logging.error(f"Error in transmitting the video: {e}")
+
+                    if id >= 100:
+                        control_data = tcp_conn.recv(BUFFER_SIZE).decode()
+                        logging.info(f"Received from client: {control_data}")
+                        if control_data != "NEXT":
+                            break
+                        id = 0 
 
             except Exception as e:
                 logging.error(f"Error sending UDP data: {e}")
-                break
-
+            finally:
+                udp_sock.close()
     return
 
 def handle_tcp_control(tcp_sock):
@@ -72,24 +80,30 @@ def handle_tcp_control(tcp_sock):
         return conn, addr
     except Exception as e:
         logging.error(f"Error establishing TCP connection: {e}")
-"""
+
 def seek_control():
     tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_sock.bind((OWN_IP, NEW_TCP_PORT))
     tcp_sock.listen(1)
     conn, addr = tcp_sock.accept()
     logging.info(f"Conexão de controle estabelecida com {addr}")
+    try:
+        while True:
+            data = conn.recv(BUFFER_SIZE).decode()
+            if not data:
+                break
+            logging.info(f"Comando recebido: {data}")
+            control_queue.put(data)
 
-    while True:
-        data = conn.recv(BUFFER_SIZE).decode()
-        if not data:
-            break
-        logging.info(f"Comando recebido: {data}")
-        control_queue.put(data)
+        conn.close()
+        tcp_sock.close()
+    except Exception as e:
+        logging.error(f"Error sending UDP data: {e}")
+    finally:
+        conn.close()
+        tcp_sock.close()
 
-    conn.close()
-    tcp_sock.close()
-"""
+
 def find_free_port():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.bind(('', 0))
@@ -104,9 +118,8 @@ if __name__ == "__main__":
             logging.info("UDP PORT =", UDP_PORT)
             logging.info("TCP PORT =", TCP_PORT)
 
-        #seek_thread = threading.Thread(target=seek_control)
-
-        #seek_thread.start()
+        seek_thread = threading.Thread(target=seek_control)
+        seek_thread.start()
 
         try:
             tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
