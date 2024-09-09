@@ -6,10 +6,11 @@ import logging
 import queue
 import threading
 
-OWN_IP = "localhost"
-UDP_PORT = 5005
-TCP_PORT = 5006
-NEW_TCP_PORT = 5007
+#OWN_IP = "localhost" #192.168.15.200
+OWN_IP = "192.168.15.200"
+UDP_PORT = 4000
+TCP_PORT = 4001
+NEW_TCP_PORT = 4002
 BUFFER_SIZE = 1400
 
 ROLLBACK_SECONDS = 5
@@ -18,9 +19,18 @@ control_queue = queue.Queue()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def handle_udp_streaming(udp_sock, tcp_conn, addr):
+def handle_udp_streaming(conn):
     id = 0
     total = 0
+    #logging.info("cheguei aqui")
+    try:
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
+        udp_sock.bind((OWN_IP, UDP_PORT))
+        #logging.info("esperando ola do cliente...")
+        msg, addr = udp_sock.recvfrom(10)
+        logging.info(f"udp link made with {addr}, message received: {msg}")
+    except Exception as e:
+        logging.error(f"Error binding UDP: {e}")
 
     with open('foguete.mp4', 'rb') as video_file:
         
@@ -36,10 +46,10 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                         elif command == "s":
                             logging.info("Streaming interrompido.")
                             break
-                        elif command == "rw":
+                        elif command == "r":
                             logging.info("Rewinding video by 5 seconds")
                             video_file.seek(video_file.tell() - ROLLBACK_SECONDS * BUFFER_SIZE)
-                        elif command == "fw":
+                        elif command == "f":
                             logging.info("Forwarding video by 5 seconds")
                             video_file.seek(video_file.tell() + ROLLBACK_SECONDS * BUFFER_SIZE)
                     
@@ -59,8 +69,8 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                     except Exception as e:
                         logging.error(f"Error in transmitting the video: {e}")
 
-                    if id >= 100:
-                        control_data = tcp_conn.recv(BUFFER_SIZE).decode()
+                    if id >= 50:
+                        control_data = conn.recv(BUFFER_SIZE).decode()
                         logging.info(f"Received from client: {control_data}")
                         if control_data != "NEXT":
                             break
@@ -72,8 +82,10 @@ def handle_udp_streaming(udp_sock, tcp_conn, addr):
                 udp_sock.close()
     return
 
-def handle_tcp_control(tcp_sock):
+def handle_tcp_control():
     try:
+        tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp_sock.bind((OWN_IP, TCP_PORT))
         tcp_sock.listen(1)
         conn, addr = tcp_sock.accept()
         logging.info(f"TCP connection established with {addr}")
@@ -103,41 +115,22 @@ def seek_control():
         conn.close()
         tcp_sock.close()
 
-
-def find_free_port():
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-    
 if __name__ == "__main__":
     try:
-        if(UDP_PORT and TCP_PORT == 0):
-            UDP_PORT = find_free_port()
-            TCP_PORT = find_free_port()
-            logging.info("UDP PORT =", UDP_PORT)
-            logging.info("TCP PORT =", TCP_PORT)
+        add = input()
+        UDP_PORT += int(add)
+        TCP_PORT += int(add)
+        NEW_TCP_PORT += int(add)
 
         seek_thread = threading.Thread(target=seek_control)
+        seek_thread.daemon = True
         seek_thread.start()
 
-        try:
-            tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            tcp_sock.bind((OWN_IP, TCP_PORT))
-            tcp_conn, tcp_addr = handle_tcp_control(tcp_sock)
-        except Exception as e:
-            logging.error(f"Error binding TCP: {e}") 
+        conn,addr = handle_tcp_control()
 
-        try:
-            udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
-            udp_sock.bind((OWN_IP, UDP_PORT))
-            _, addr = udp_sock.recvfrom(10)
-        except Exception as e:
-            logging.error(f"Error binding UDP: {e}")
-
-        handle_udp_streaming(udp_sock, tcp_conn, addr)
+        handle_udp_streaming(conn)
 
     finally:
-        tcp_conn.close()
-        tcp_sock.close()
+        #conn.close()
+        #tcp_sock.close()
         logging.info("Server closed")
